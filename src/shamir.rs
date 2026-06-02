@@ -1,4 +1,5 @@
 use rand::rng;
+use crate::FieldElement;
 
 #[derive(Debug)]
 pub struct Shamir {

@@ -1,6 +1,5 @@
-use core::num;
 use std::ops::{Add, Sub, Mul, Div};
-use modulo::Mod;
+
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,7 +29,7 @@ impl FieldElement {
         Self::new(1, prime)
     }
 
-    pub fn pow(&self, mut exponent: u32) -> Self {
+    pub fn pow(&self, mut exponent: u64) -> Self {
         let mut base = self.num;
         let mut result = 1u64;
         let prime = self.prime;
@@ -47,7 +46,7 @@ impl FieldElement {
     }
 
     pub fn inverse(&self) -> Self {
-        self.pow(self.prime as u32 - 2)
+        self.pow(self.prime as u64 - 2)
     }
 }
 
@@ -82,7 +81,7 @@ impl Mul for FieldElement {
     fn mul(self, rhs: Self) -> Self {
         assert_eq!(self.prime, rhs.prime, "Cannot multiply elements from different fields");
         Self {
-            num: (self.num * rhs.num) % self.prime,
+            num: (((self.num as u128) * (rhs.num as u128)) % (self.prime as u128)) as u64,
             prime: self.prime,
         }
     }
