@@ -38,10 +38,10 @@ impl Shamir {
     pub fn split(&self) -> Vec<(FieldElement, FieldElement)> {
         let mut coefficients = vec![self.secret.clone()];
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 1..self.threshold {
-            let random_num = rng.gen_range(0..self.secret.prime);
+            let random_num = rng.random_range(0..self.secret.prime);
 
             let random_coeff =
                 FieldElement::new(random_num, self.secret.prime);
@@ -123,11 +123,11 @@ mod tests {
 
         // Reconstruct with exactly threshold shares
         let reconstructed = Shamir::reconstruct(&shares[0..threshold as usize]);
-        assert_eq!(reconstructed.num, secret);
+        assert_eq!(reconstructed.value(), secret);
 
         // Reconstruct with more than threshold shares
         let reconstructed2 = Shamir::reconstruct(&shares[0..4]);
-        assert_eq!(reconstructed2.num, secret);
+        assert_eq!(reconstructed2.value(), secret);
     }
 
     #[test]

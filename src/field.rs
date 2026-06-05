@@ -48,6 +48,10 @@ impl FieldElement {
     pub fn inverse(&self) -> Self {
         self.pow(self.prime as u64 - 2)
     }
+
+    pub fn value(&self) -> U64{
+        self.num
+    }
 }
 
 
