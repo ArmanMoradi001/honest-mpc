@@ -1,5 +1,5 @@
 use rand::rng;
-use crate::FieldElement;
+use crate::field::FieldElement;
 
 #[derive(Debug)]
 pub struct Shamir {
@@ -38,7 +38,7 @@ impl Shamir {
     pub fn split(&self) -> Vec<(FieldElement, FieldElement)> {
         let mut coefficients = vec![self.secret.clone()];
 
-        let mut rng = rand::rng();
+        let mut rng = rand::RngExt();
 
         for _ in 1..self.threshold {
             let random_num = rng.random_range(0..self.secret.prime);
@@ -57,7 +57,7 @@ impl Shamir {
             let mut y = FieldElement::new(0, self.secret.prime);
 
             for (i, coeff) in coefficients.iter().enumerate() {
-                let term = coeff.clone() * x_fe.pow(i as u32);
+                let term = coeff.clone() * x_fe.pow(i as u64);
                 y = y + term;
             }
 

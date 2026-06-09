@@ -4,8 +4,8 @@ use std::ops::{Add, Sub, Mul, Div};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldElement {
-    num: u64,
-    prime: u64,
+   pub num: u64,
+   pub prime: u64,
 }
 
 impl FieldElement {
@@ -49,7 +49,7 @@ impl FieldElement {
         self.pow(self.prime as u64 - 2)
     }
 
-    pub fn value(&self) -> U64{
+    pub fn value(&self) -> u64{
         self.num
     }
 }
