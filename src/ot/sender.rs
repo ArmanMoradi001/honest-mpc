@@ -1,19 +1,19 @@
 use std::marker::PhantomData;
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::ristretto::RistrettoPoint;
-use rand::rngs::OsRng;
-use sha2::{Sha512, Digest};
+//use rand::rngs::OsRng;
+use rand::rand_core::{RngCore, OsRng};
+use k256::sha2::{Sha512, Digest};
 
 pub struct Sender<State> {
     scalar: Scalar,
     public: RistrettoPoint,
+    receiver_point: Option<RistrettoPoint>,
     _state: PhantomData<State>,
 }
 
 pub struct Uninitialized;
-pub struct Ready {
-    receiver_point: RistrettoPoint,  // ADD: Define this field
-}
+pub struct Ready;
 
 impl Sender<Uninitialized> {
     pub fn new(generator: &RistrettoPoint) -> Self {
@@ -23,31 +23,34 @@ impl Sender<Uninitialized> {
         Self {
             scalar,
             public,
+            receiver_point: None,
             _state: PhantomData,
         }
     }
 
-    // FIX: Add return type
     pub fn send(&self) -> RistrettoPoint {
         self.public
     }
 
-    // FIX: Return correct type, don't wrap in Some()
     pub fn receive(self, receiver_point: RistrettoPoint) -> Sender<Ready> {
         Sender {
             scalar: self.scalar,
             public: self.public,
-            receiver_point,  // FIX: Direct assignment, not Some()
+            receiver_point: Some(receiver_point),
             _state: PhantomData,
         }
     }
 }
 
-// FIX: Add generic parameter to properly define Ready struct
 impl Sender<Ready> {
+    pub fn public_key(&self) -> RistrettoPoint {
+        self.public
+    }
+
     pub fn encrypt(&self, m0: u64, m1: u64) -> (u64, u64) {
-        let k0 = self.derive_key(self.receiver_point);
-        let k1 = self.derive_key(self.receiver_point - self.public);
+        let r = self.receiver_point.unwrap();
+        let k0 = self.derive_key(r);
+        let k1 = self.derive_key(r - self.public);
 
         let c0 = m0 ^ self.hash_to_u64(&k0);
         let c1 = m1 ^ self.hash_to_u64(&k1);
@@ -56,7 +59,7 @@ impl Sender<Ready> {
     }
 
     fn derive_key(&self, point: RistrettoPoint) -> RistrettoPoint {
-        point * self.scalar
+        self.scalar * point
     }
 
     fn hash_to_u64(&self, point: &RistrettoPoint) -> u64 {
@@ -64,9 +67,5 @@ impl Sender<Ready> {
         hasher.update(point.compress().as_bytes());
         let hash = hasher.finalize();
         u64::from_le_bytes(hash[0..8].try_into().unwrap())
-    }
-
-    pub fn public_key(&self) -> RistrettoPoint {
-        self.public
     }
 }

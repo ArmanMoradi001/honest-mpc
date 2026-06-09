@@ -1,8 +1,9 @@
 use std::marker::PhantomData;
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::ristretto::RistrettoPoint;
-use rand::rngs::OsRng;
-use sha2::{Sha512, Digest};
+//use rand::rngs::OsRng;
+use rand::rand_core::{RngCore, OsRng};
+use k256::sha2::{Sha512, Digest};
 
 pub struct Receiver<State> {
     scalar: Scalar,
