@@ -1,5 +1,6 @@
-use rand::rng;
 use crate::field::FieldElement;
+use rand::rngs::OsRng;
+use rand::Rng;
 
 #[derive(Debug)]
 pub struct Shamir {
@@ -7,6 +8,7 @@ pub struct Shamir {
     total_shares: u64,
     threshold: u64,
 }
+
 impl Shamir {
     pub fn new(
         secret: u64,
@@ -17,8 +19,7 @@ impl Shamir {
         if threshold > total_shares {
             panic!(
                 "Threshold {} could not be greater than total shares {}",
-                threshold,
-                total_shares
+                threshold, total_shares
             );
         }
 
@@ -38,10 +39,10 @@ impl Shamir {
     pub fn split(&self) -> Vec<(FieldElement, FieldElement)> {
         let mut coefficients = vec![self.secret.clone()];
 
-        let mut rng = rand::RngExt();
+        let mut rng = OsRng;
 
         for _ in 1..self.threshold {
-            let random_num = rng.random_range(0..self.secret.prime);
+            let random_num = rng.gen_range(0..self.secret.prime);
 
             let random_coeff =
                 FieldElement::new(random_num, self.secret.prime);
@@ -148,5 +149,3 @@ mod tests {
         assert_eq!(Shamir::reconstruct(&shares[2..6]).num, secret);
     }
 }
-
-

@@ -1,7 +1,7 @@
 mod field;
 mod shamir;
 mod ot;
-use api::OTSession;
+use ot::api::OTSession;
 
 
 fn main() {
