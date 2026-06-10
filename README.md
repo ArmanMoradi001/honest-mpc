@@ -1,4 +1,4 @@
-# mpc-primitives
+# Honest-mpc
 
 A Rust library implementing the foundational cryptographic primitives for
 Multi-Party Computation (MPC) from the ground up: finite field arithmetic,
