@@ -46,25 +46,36 @@ impl Sender<Ready> {
         self.public
     }
 
-    pub fn encrypt(&self, m0: u64, m1: u64) -> (u64, u64) {
-        let r = self.receiver_point.unwrap();
-        let k0 = self.derive_key(r);
-        let k1 = self.derive_key(r - self.public);
+    pub fn encrypt(&self, m0: &[u8; 32], m1: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
+    let r = self.receiver_point.unwrap();
+    let k0 = self.derive_key(r);
+    let k1 = self.derive_key(r - self.public);
 
-        let c0 = m0 ^ self.hash_to_u64(&k0);
-        let c1 = m1 ^ self.hash_to_u64(&k1);
+    let c0 = self.xor_bytes(m0, &self.hash_to_bytes(&k0));
+    let c1 = self.xor_bytes(m1, &self.hash_to_bytes(&k1));
 
-        (c0, c1)
-    }
+    (c0, c1)
+}
 
-    fn derive_key(&self, point: RistrettoPoint) -> RistrettoPoint {
-        self.scalar * point
-    }
-
-    fn hash_to_u64(&self, point: &RistrettoPoint) -> u64 {
+    fn hash_to_bytes(&self, point: &RistrettoPoint) -> [u8; 32] {
         let mut hasher = Sha512::new();
         hasher.update(point.compress().as_bytes());
         let hash = hasher.finalize();
-        u64::from_le_bytes(hash[0..8].try_into().unwrap())
+        let mut result = [0u8; 32];
+        result.copy_from_slice(&hash[0..32]);
+        result
     }
+
+    fn derive_key(&self, point: RistrettoPoint) -> RistrettoPoint {
+    self.scalar * point
+}
+
+    fn xor_bytes(&self, a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
+        let mut result = [0u8; 32];
+        for i in 0..32 {
+            result[i] = a[i] ^ b[i];
+        }
+        result
+    }
+
 }

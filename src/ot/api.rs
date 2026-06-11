@@ -1,129 +1,126 @@
-// api.rs
-use crate::ot::sender::Sender;
-use crate::ot::receiver::Receiver;
+use crate::ot::sender::{Sender, Uninitialized, Ready};
+use crate::ot::receiver::{Receiver, FirstPhase, SecondPhase};
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 
-/// Message passed from receiver to sender
-pub struct ReceiverMessage {
-    pub receiver_public_key: RistrettoPoint,
+/// The sender's public key, sent to the receiver at the start of the protocol.
+pub struct SenderPublicKey {
+    pub key: RistrettoPoint,
 }
 
-/// Message passed from sender to receiver
-pub struct SenderMessage {
-    pub sender_public_key: RistrettoPoint,
-    pub encrypted_messages: (u64, u64),
+/// The receiver's public key, sent back to the sender.
+pub struct ReceiverPublicKey {
+    pub key: RistrettoPoint,
 }
 
-/// Oblivious Transfer Protocol Orchestrator
+/// The two encrypted messages produced by the sender.
+pub struct EncryptedMessages {
+    pub ciphertexts: ([u8; 32], [u8; 32]),
+}
+
+/// The decrypted result obtained by the receiver.
+pub struct OTResult {
+    pub decrypted: [u8; 32],
+}
+
+/// Step-by-step orchestrator for the Chou-Orlandi OT protocol.
+///
+/// Use this when you need explicit control over each protocol step —
+/// for example, when sender and receiver are on separate machines and
+/// messages are passed over a network.
 pub struct ObliviousTransferProtocol;
 
 impl ObliviousTransferProtocol {
-    /// Step 1: Initialize sender
-    pub fn initialize_sender() -> Sender<crate::ot::sender::Uninitialized> {
+    /// Step 1: Sender generates its keypair.
+    pub fn initialize_sender() -> Sender<Uninitialized> {
         Sender::new(&RISTRETTO_BASEPOINT_POINT)
     }
 
-    /// Step 2: Sender sends public key to receiver
-    pub fn sender_send_pubkey(sender: &Sender<crate::ot::sender::Uninitialized>) -> ReceiverMessage {
-        ReceiverMessage {
-            receiver_public_key: sender.send(),
-        }
+    /// Step 2: Extract sender's public key to send to the receiver.
+    pub fn sender_public_key(sender: &Sender<Uninitialized>) -> SenderPublicKey {
+        SenderPublicKey { key: sender.send() }
     }
 
-    /// Step 3: Initialize receiver with chosen bit
+    /// Step 3: Receiver initializes with its choice bit and the sender's public key.
     pub fn initialize_receiver(
         chosen_bit: u8,
-        sender_pubkey: RistrettoPoint,
-    ) -> Receiver<crate::ot::receiver::FirstPhase> {
-        Receiver::new(chosen_bit, &RISTRETTO_BASEPOINT_POINT, &sender_pubkey)
+        sender_key: &SenderPublicKey,
+    ) -> Receiver<FirstPhase> {
+        Receiver::new(chosen_bit, &RISTRETTO_BASEPOINT_POINT, &sender_key.key)
     }
 
-    /// Step 4: Receiver sends public key back to sender
-    pub fn receiver_send_pubkey(
-        receiver: &Receiver<crate::ot::receiver::FirstPhase>,
-    ) -> ReceiverMessage {
-        ReceiverMessage {
-            receiver_public_key: receiver.send(),
+    /// Step 4: Extract receiver's public key to send back to the sender.
+    pub fn receiver_public_key(receiver: &Receiver<FirstPhase>) -> ReceiverPublicKey {
+        ReceiverPublicKey { key: receiver.send() }
+    }
+
+    /// Step 5: Sender receives the receiver's public key and encrypts both messages.
+    pub fn sender_encrypt(
+        sender: Sender<Uninitialized>,
+        receiver_key: &ReceiverPublicKey,
+        m0: &[u8; 32],
+        m1: &[u8; 32],
+    ) -> (Sender<Ready>, EncryptedMessages) {
+        let sender_ready = sender.receive(receiver_key.key);
+        let ciphertexts = sender_ready.encrypt(m0, m1);
+        (sender_ready, EncryptedMessages { ciphertexts })
+    }
+
+    /// Step 6: Receiver advances to the decryption phase.
+    pub fn receiver_advance(receiver: Receiver<FirstPhase>) -> Receiver<SecondPhase> {
+        receiver.receive()
+    }
+
+    /// Step 7: Receiver decrypts the message corresponding to its chosen bit.
+    pub fn receiver_decrypt(
+        receiver: &Receiver<SecondPhase>,
+        encrypted: &EncryptedMessages,
+    ) -> OTResult {
+        OTResult {
+            decrypted: receiver.decrypt(&encrypted.ciphertexts),
         }
     }
-
-    /// Step 5: Sender receives receiver's public key and encrypts messages
-    pub fn sender_encrypt(
-        sender: Sender<crate::ot::sender::Uninitialized>,
-        receiver_pubkey: RistrettoPoint,
-        m0: u64,
-        m1: u64,
-    ) -> (Sender<crate::ot::sender::Ready>, SenderMessage) {
-        let sender_ready = sender.receive(receiver_pubkey);
-        let encrypted = sender_ready.encrypt(m0, m1);
-
-        let message = SenderMessage {
-            sender_public_key: sender_ready.public_key(),
-            encrypted_messages: encrypted,
-        };
-
-        (sender_ready, message)
-    }
-
-    /// Step 6: Receiver transitions to second phase and receives encrypted messages
-    pub fn receiver_receive(
-        receiver: Receiver<crate::ot::receiver::FirstPhase>,
-        encrypted_tuple: RistrettoPoint,
-    ) -> Receiver<crate::ot::receiver::SecondPhase> {
-        receiver.receive(encrypted_tuple)
-    }
-
-    /// Step 7: Receiver decrypts to get the message corresponding to chosen bit
-    pub fn receiver_decrypt(
-        receiver: &Receiver<crate::ot::receiver::SecondPhase>,
-        encrypted_tuple: &(u64, u64),
-    ) -> u64 {
-        receiver.decrypt(encrypted_tuple)
-    }
 }
 
-/// High-level convenience API
-pub struct OTSession {
-    pub sender: Option<Sender<crate::ot::sender::Ready>>,
-    pub receiver: Option<Receiver<crate::ot::receiver::SecondPhase>>,
-}
+/// High-level convenience API — runs the full protocol in a single call.
+///
+/// Both sender and receiver are simulated in the same process.
+/// Use [`ObliviousTransferProtocol`] directly for distributed scenarios.
+pub struct OTSession;
 
 impl OTSession {
-    pub fn new() -> Self {
-        Self {
-            sender: None,
-            receiver: None,
-        }
-    }
-
-    /// Run full OT protocol
-    pub fn run(
-        chosen_bit: u8,
-        m0: u64,
-        m1: u64,
-    ) -> (u64, u64) {
-        // Step 1: Sender initialization
+    /// Run the full 1-of-2 OT protocol.
+    ///
+    /// # Arguments
+    /// - `chosen_bit`: `0` or `1` — which message the receiver wants
+    /// - `m0`: the sender's first message (32 bytes)
+    /// - `m1`: the sender's second message (32 bytes)
+    ///
+    /// # Returns
+    /// [`OTResult`] containing the decrypted message for `chosen_bit`.
+    ///
+    /// # Example
+    /// ```
+    /// let m0 = b"this is the first  message!!!!!!";
+    /// let m1 = b"this is the second message!!!!!!";
+    /// let result = OTSession::run(1, m0, m1);
+    /// assert_eq!(&result.decrypted, m1);
+    /// ```
+    pub fn run(chosen_bit: u8, m0: &[u8; 32], m1: &[u8; 32]) -> OTResult {
         let sender = ObliviousTransferProtocol::initialize_sender();
-        let sender_pubkey = sender.send();
+        let sender_key = ObliviousTransferProtocol::sender_public_key(&sender);
 
-        // Step 2: Receiver initialization
-        let receiver = ObliviousTransferProtocol::initialize_receiver(chosen_bit, sender_pubkey);
-        let receiver_pubkey = receiver.send();
+        let receiver = ObliviousTransferProtocol::initialize_receiver(chosen_bit, &sender_key);
+        let receiver_key = ObliviousTransferProtocol::receiver_public_key(&receiver);
 
-        // Step 3: Sender encrypts
-        let (sender_ready, sender_msg) = ObliviousTransferProtocol::sender_encrypt(
+        let (_, encrypted) = ObliviousTransferProtocol::sender_encrypt(
             sender,
-            receiver_pubkey,
+            &receiver_key,
             m0,
             m1,
         );
 
-        // Step 4: Receiver decrypts
-        let receiver_phase2 = receiver.receive(sender_msg.sender_public_key);
-        let decrypted = receiver_phase2.decrypt(&sender_msg.encrypted_messages);
-
-        // Return both encrypted tuple and decrypted result for verification
-        (sender_msg.encrypted_messages.0, decrypted)
+        let receiver_ready = ObliviousTransferProtocol::receiver_advance(receiver);
+        ObliviousTransferProtocol::receiver_decrypt(&receiver_ready, &encrypted)
     }
 }

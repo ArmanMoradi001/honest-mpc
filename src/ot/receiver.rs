@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::ristretto::RistrettoPoint;
 use rand::rngs::OsRng;
-use k256::sha2::{Sha512, Digest};
+use sha2::{Sha512, Digest};
 
 pub struct Receiver<State> {
     scalar: Scalar,
@@ -50,7 +50,7 @@ impl Receiver<FirstPhase> {
     }
 
     // FIX: Return type should be Receiver<SecondPhase>
-    pub fn receive(self, encrypted_tuple: RistrettoPoint) -> Receiver<SecondPhase> {
+    pub fn receive(self) -> Receiver<SecondPhase> {
         Receiver {
             scalar: self.scalar,
             public_key: self.public_key,
@@ -69,19 +69,31 @@ impl Receiver<SecondPhase> {
         u64::from_le_bytes(hash[0..8].try_into().unwrap())
     }
 
-    // FIX: Add parameter type, return type, and fix logic
-    pub fn decrypt(&self, encrypted_tuple: &(u64, u64)) -> u64 {
-        // FIX: Use proper variable names and types
-        let k_point = self.scalar * self.received_spk;
-        let hashed_k = self.hash_to_u64(&k_point);
-        
-        // FIX: Access tuple elements correctly
-        if self.chosen_bit == 0 {
-            hashed_k ^ encrypted_tuple.0
-        } else if self.chosen_bit == 1 {
-            hashed_k ^ encrypted_tuple.1
-        } else {
-            panic!("Invalid chosen bit")
-        }
+   pub fn decrypt(&self, encrypted_tuple: &([u8; 32], [u8; 32])) -> [u8; 32] {
+    let k_point = self.scalar * self.received_spk;
+    let key = self.hash_to_bytes(&k_point);
+
+    if self.chosen_bit == 0 {
+        self.xor_bytes(&encrypted_tuple.0, &key)
+    } else {
+        self.xor_bytes(&encrypted_tuple.1, &key)
     }
+}
+
+fn hash_to_bytes(&self, point: &RistrettoPoint) -> [u8; 32] {
+    let mut hasher = Sha512::new();
+    hasher.update(point.compress().as_bytes());
+    let hash = hasher.finalize();
+    let mut result = [0u8; 32];
+    result.copy_from_slice(&hash[0..32]);
+    result
+}
+
+fn xor_bytes(&self, a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
+    let mut result = [0u8; 32];
+    for i in 0..32 {
+        result[i] = a[i] ^ b[i];
+    }
+    result
+}
 }

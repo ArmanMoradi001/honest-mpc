@@ -42,10 +42,10 @@ impl Shamir {
         let mut rng = OsRng;
 
         for _ in 1..self.threshold {
-            let random_num = rng.gen_range(0..self.secret.prime);
+            let random_num = rng.gen_range(0..self.secret.prime());
 
             let random_coeff =
-                FieldElement::new(random_num, self.secret.prime);
+                FieldElement::new(random_num, self.secret.prime());
 
             coefficients.push(random_coeff);
         }
@@ -53,9 +53,9 @@ impl Shamir {
         let mut shares = Vec::new();
 
         for x in 1..=self.total_shares {
-            let x_fe = FieldElement::new(x, self.secret.prime);
+            let x_fe = FieldElement::new(x, self.secret.prime());
 
-            let mut y = FieldElement::new(0, self.secret.prime);
+            let mut y = FieldElement::new(0, self.secret.prime());
 
             for (i, coeff) in coefficients.iter().enumerate() {
                 let term = coeff.clone() * x_fe.pow(i as u64);
@@ -75,7 +75,7 @@ impl Shamir {
             panic!("At least one share is required");
         }
 
-        let prime = shares[0].0.prime;
+        let prime = shares[0].0.prime();
 
         let mut result = FieldElement::new(0, prime);
 
@@ -145,7 +145,7 @@ mod tests {
         let shares = shamir.split();
 
         // Try different combinations of 4 shares
-        assert_eq!(Shamir::reconstruct(&shares[1..5]).num, secret);
-        assert_eq!(Shamir::reconstruct(&shares[2..6]).num, secret);
+        assert_eq!(Shamir::reconstruct(&shares[1..5]).value(), secret);
+        assert_eq!(Shamir::reconstruct(&shares[2..6]).value(), secret);
     }
 }
