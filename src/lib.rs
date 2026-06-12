@@ -22,3 +22,4 @@
 pub mod field;
 pub mod shamir;
 pub mod ot;
+pub mod error;

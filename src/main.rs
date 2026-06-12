@@ -4,14 +4,14 @@ use mpc_primitives::ot::api::OTSession;
 
 fn demo_field() {
     println!("=== Finite Field Arithmetic (F_97) ===");
-    let a = FieldElement::new(42, 97);
-    let b = FieldElement::new(55, 97);
+    let a = FieldElement::new(42, 97).unwrap();
+    let b = FieldElement::new(55, 97).unwrap();
     println!("a         = {}", a.value());
     println!("b         = {}", b.value());
     println!("a + b     = {}", (a + b).value());
     println!("a * b     = {}", (a * b).value());
-    println!("a^(-1)    = {}", a.inverse().value());
-    println!("a * a^(-1)= {}", (a * a.inverse()).value());
+    println!("a^(-1)    = {}", a.inverse().unwrap().value());
+    println!("a * a^(-1)= {}", (a * a.inverse().unwrap()).value());
 }
 
 fn demo_shamir() {
@@ -20,12 +20,12 @@ fn demo_shamir() {
     let prime  = 97u64;
     println!("Secret    = {}", secret);
 
-    let shamir = Shamir::new(secret, 5, 3, prime);
+    let shamir = Shamir::new(secret, 5, 3, prime).unwrap();
     let shares = shamir.split();
 
     println!("Shares    = {:?}", shares.iter().map(|(x, y)| (x.value(), y.value())).collect::<Vec<_>>());
 
-    let recovered = Shamir::reconstruct(&shares[0..3]);
+    let recovered = Shamir::reconstruct(&shares[0..3], 3).unwrap();
     println!("Recovered = {}", recovered.value());
     assert_eq!(recovered.value(), secret);
 }
@@ -38,7 +38,7 @@ fn demo_ot() {
     for bit in [0u8, 1u8] {
         let result = OTSession::run(bit, m0, m1);
         let expected = if bit == 0 { m0 } else { m1 };
-        println!("bit={} => decrypted: {:?}", bit, std::str::from_utf8(&result.decrypted).unwrap());
+        println!("bit={} => decrypted: {}", bit, std::str::from_utf8(&result.decrypted).unwrap());
         assert_eq!(&result.decrypted, expected);
     }
 }

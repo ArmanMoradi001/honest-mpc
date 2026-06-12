@@ -1,3 +1,4 @@
+use crate::error::{FieldError, ShamirError};
 use crate::field::FieldElement;
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -10,55 +11,50 @@ pub struct Shamir {
 }
 
 impl Shamir {
+    /// Construct a new Shamir secret sharing scheme.
+    ///
+    /// # Errors
+    /// - `ShamirError::InvalidThreshold` if `threshold > total_shares`
+    /// - `ShamirError::ThresholdTooSmall` if `threshold < 1`
+    /// - `ShamirError::FieldError` if `prime` is invalid or `secret` out of range
     pub fn new(
         secret: u64,
         total_shares: u64,
         threshold: u64,
         prime: u64,
-    ) -> Self {
-        if threshold > total_shares {
-            panic!(
-                "Threshold {} could not be greater than total shares {}",
-                threshold, total_shares
-            );
-        }
-
+    ) -> Result<Self, ShamirError> {
         if threshold < 1 {
-            panic!("Threshold must be at least 1");
+            return Err(ShamirError::ThresholdTooSmall(threshold));
         }
-
-        let field_secret = FieldElement::new(secret, prime);
-
-        Self {
-            secret: field_secret,
-            total_shares,
-            threshold,
+        if threshold > total_shares {
+            return Err(ShamirError::InvalidThreshold { threshold, total_shares });
         }
+        let field_secret = FieldElement::new(secret, prime)?;
+        Ok(Self { secret: field_secret, total_shares, threshold })
     }
 
+    /// Split the secret into `total_shares` shares.
+    /// Any `threshold` of them can reconstruct the secret.
     pub fn split(&self) -> Vec<(FieldElement, FieldElement)> {
-        let mut coefficients = vec![self.secret.clone()];
-
+        let mut coefficients = vec![self.secret];
         let mut rng = OsRng;
 
         for _ in 1..self.threshold {
             let random_num = rng.gen_range(0..self.secret.prime());
-
-            let random_coeff =
-                FieldElement::new(random_num, self.secret.prime());
-
-            coefficients.push(random_coeff);
+            // safe: prime is already validated, random_num is in range
+            let coeff = FieldElement::new(random_num, self.secret.prime()).unwrap();
+            coefficients.push(coeff);
         }
 
         let mut shares = Vec::new();
 
         for x in 1..=self.total_shares {
-            let x_fe = FieldElement::new(x, self.secret.prime());
-
-            let mut y = FieldElement::new(0, self.secret.prime());
+            // safe: x < prime because total_shares must be < prime for correctness
+            let x_fe = FieldElement::new(x, self.secret.prime()).unwrap();
+            let mut y = FieldElement::zero(self.secret.prime()).unwrap();
 
             for (i, coeff) in coefficients.iter().enumerate() {
-                let term = coeff.clone() * x_fe.pow(i as u64);
+                let term = *coeff * x_fe.pow(i as u64);
                 y = y + term;
             }
 
@@ -68,84 +64,125 @@ impl Shamir {
         shares
     }
 
+    /// Reconstruct the secret from a slice of shares using Lagrange interpolation.
+    ///
+    /// # Errors
+    /// - `ShamirError::InsufficientShares` if `shares` is empty
+    /// - `ShamirError::ShareFieldMismatch` if shares come from different fields
     pub fn reconstruct(
         shares: &[(FieldElement, FieldElement)],
-    ) -> FieldElement {
+        threshold: u64,
+    ) -> Result<FieldElement, ShamirError> {
         if shares.is_empty() {
-            panic!("At least one share is required");
+            return Err(ShamirError::InsufficientShares(threshold, 0));
+        }
+        if (shares.len() as u64) < threshold {
+            return Err(ShamirError::InsufficientShares(threshold, shares.len()));
         }
 
         let prime = shares[0].0.prime();
 
-        let mut result = FieldElement::new(0, prime);
+        // Verify all shares are from the same field
+        for (x, _) in shares.iter() {
+            if x.prime() != prime {
+                return Err(ShamirError::ShareFieldMismatch {
+                    left: prime,
+                    right: x.prime(),
+                });
+            }
+        }
+
+        let mut result = FieldElement::zero(prime).unwrap();
 
         for (i, (xi, yi)) in shares.iter().enumerate() {
-            let mut numerator = FieldElement::new(1, prime);
-
-            let mut denominator = FieldElement::new(1, prime);
+            let mut numerator = FieldElement::one(prime).unwrap();
+            let mut denominator = FieldElement::one(prime).unwrap();
 
             for (j, (xj, _)) in shares.iter().enumerate() {
-                if i == j {
-                    continue;
-                }
-
-                numerator =
-                    numerator * (FieldElement::new(0, prime) - xj.clone());
-
-                denominator =
-                    denominator * (xi.clone() - xj.clone());
+                if i == j { continue; }
+                numerator = numerator * (FieldElement::zero(prime).unwrap() - *xj);
+                denominator = denominator * (*xi - *xj);
             }
 
             let lagrange_basis = numerator / denominator;
-
-            result = result + (yi.clone() * lagrange_basis);
+            result = result + (*yi * lagrange_basis);
         }
 
-        result
+        Ok(result)
     }
 }
-
-// ==================== Tests ====================
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::field::FieldElement;
+
+    const PRIME: u64 = 97;
+    const SECRET: u64 = 42;
 
     #[test]
-    fn test_shamir_threshold_correctness() {
-        let prime = 41; // Small prime for testing
-        let secret = 25u64;
-        let total = 5;
-        let threshold = 3;
-
-        let shamir = Shamir::new(secret, total, threshold, prime);
+    fn test_reconstruct_with_exact_threshold() {
+        let shamir = Shamir::new(SECRET, 5, 3, PRIME).unwrap();
         let shares = shamir.split();
-
-        // Reconstruct with exactly threshold shares
-        let reconstructed = Shamir::reconstruct(&shares[0..threshold as usize]);
-        assert_eq!(reconstructed.value(), secret);
-
-        // Reconstruct with more than threshold shares
-        let reconstructed2 = Shamir::reconstruct(&shares[0..4]);
-        assert_eq!(reconstructed2.value(), secret);
+        let recovered = Shamir::reconstruct(&shares[0..3], 3).unwrap();
+        assert_eq!(recovered.value(), SECRET);
     }
 
     #[test]
-    #[should_panic]
-    fn test_invalid_threshold() {
-        let _ = Shamir::new(42, 5, 6, 17);
+    fn test_reconstruct_with_more_than_threshold() {
+        let shamir = Shamir::new(SECRET, 5, 3, PRIME).unwrap();
+        let shares = shamir.split();
+        let recovered = Shamir::reconstruct(&shares[0..5], 3).unwrap();
+        assert_eq!(recovered.value(), SECRET);
     }
 
     #[test]
-    fn test_different_share_combinations() {
-        let prime = 97;
-        let secret = 58u64;
-        let shamir = Shamir::new(secret, 6, 4, prime);
+    fn test_different_share_combinations_give_same_secret() {
+        let shamir = Shamir::new(SECRET, 6, 4, PRIME).unwrap();
         let shares = shamir.split();
+        assert_eq!(Shamir::reconstruct(&shares[0..4], 4).unwrap().value(), SECRET);
+        assert_eq!(Shamir::reconstruct(&shares[1..5], 4).unwrap().value(), SECRET);
+        assert_eq!(Shamir::reconstruct(&shares[2..6], 4).unwrap().value(), SECRET);
+    }
 
-        // Try different combinations of 4 shares
-        assert_eq!(Shamir::reconstruct(&shares[1..5]).value(), secret);
-        assert_eq!(Shamir::reconstruct(&shares[2..6]).value(), secret);
+    #[test]
+    fn test_threshold_too_small_returns_err() {
+        assert!(matches!(
+            Shamir::new(SECRET, 5, 0, PRIME),
+            Err(ShamirError::ThresholdTooSmall(0))
+        ));
+    }
+
+    #[test]
+    fn test_threshold_exceeds_total_returns_err() {
+        assert!(matches!(
+            Shamir::new(SECRET, 5, 6, PRIME),
+            Err(ShamirError::InvalidThreshold { threshold: 6, total_shares: 5 })
+        ));
+    }
+
+    #[test]
+    fn test_empty_shares_returns_err() {
+        assert!(matches!(
+            Shamir::reconstruct(&[], 3),
+            Err(ShamirError::InsufficientShares(3, 0))
+        ));
+    }
+
+    #[test]
+    fn test_insufficient_shares_returns_err() {
+        let shamir = Shamir::new(SECRET, 5, 3, PRIME).unwrap();
+        let shares = shamir.split();
+        assert!(matches!(
+            Shamir::reconstruct(&shares[0..2], 3),
+            Err(ShamirError::InsufficientShares(3, 2))
+        ));
+    }
+
+    #[test]
+    fn test_invalid_prime_returns_err() {
+        assert!(matches!(
+            Shamir::new(SECRET, 5, 3, 10),
+            Err(ShamirError::FieldError(FieldError::NotPrime(10)))
+        ));
     }
 }
